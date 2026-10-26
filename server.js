@@ -38,11 +38,6 @@ app.get("/inventory", async (req, res) => {
 
     const { data: rows, error } = await query;
 
-    // 2. Print raw output directly to your terminal screen
-    console.log("--- DB DEBUG LOG ---");
-    console.log("Error from Supabase:", error);
-    console.log("Rows returned from Supabase:", rows);
-
     if (error) {
       return res.status(400).json({ message: error.message });
     }
