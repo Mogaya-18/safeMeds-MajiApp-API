@@ -41,33 +41,95 @@ An Express API for water-purification inventory, product reviews, customer order
 
    The API listens on port 3000 by default. Keep this terminal open while testing.
 
-All endpoints require the `X-API-Key` request header. Use the value configured as `MAJIAPP_API_KEY` or one of the values in `API_KEYS`. Do not commit `.env` or share credentials.
+All endpoints require the `X-API-Key` request header. Use the value configured as `MAJIAPP_API_KEY` or one of the values in `API_KEYS`. Requests are limited to 100 per API key per 60 seconds; excess requests receive `429 Too Many Requests` and a `Retry-After` header. Do not commit `.env` or share credentials.
 
 ## Endpoints
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/inventory` | Water-purification inventory. Optional `product` and `available` filters. |
-| `GET` | `/reviews` | Top three water-purification products by average rating. |
-| `POST` | `/orders` | Creates a customer order. |
-| `GET` | `/v1/health-signals/area-alerts?region={region}&since={YYYY-MM-DD}` | Aggregate waterborne-illness prescription-spike demo alerts. |
-
-### Example: area alerts (PowerShell)
-
-Run this in a second PowerShell window while the server is running:
+Use this header in the examples below. Replace the prompt value with the API key from your local `.env`:
 
 ```powershell
 $apiKey = Read-Host "API key"
+$headers = @{"X-API-Key"=$apiKey}
+```
+
+### `GET /tasks`
+
+A simple protected connectivity check. It does not read or write database data.
+
+- **Inputs:** No query parameters or request body.
+- **Success:** `200 OK` with `{"message":"Success! You accessed a protected endpoint."}`.
+- **Useful for:** Confirming the server is reachable and the API key is accepted.
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:3000/tasks" -Headers $headers
+```
+
+### `GET /inventory`
+
+Returns water-purification items from the Supabase `inventory` table. Each item is reshaped to expose its ID, name, stock quantity, and whether any stock is available.
+
+- **Inputs:** Optional `product` filters item names by a case-insensitive substring. Optional `available=true` returns stocked items; `available=false` returns items with no stock.
+- **Success:** `200 OK` with an array of `{ productId, productName, availableQuantity, isAvailable }`. No matches returns an empty array.
+- **Data access:** Reads inventory rows in the `Water Purification` category; it does not change stock.
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:3000/inventory?product=Aquatabs&available=true" -Headers $headers
+```
+
+### `GET /reviews`
+
+Ranks water-purification products by their average customer rating. It joins review product IDs to water-purification items in `inventory`, calculates each average to one decimal place, counts reviews, and returns at most the top three products.
+
+- **Inputs:** No query parameters or request body.
+- **Success:** `200 OK` with an array of `{ productId, productName, averageRating, reviewCount, topComment }`. Products without matching reviews are omitted; no matches returns an empty array.
+- **Data access:** Reads `product_reviews` and `inventory`; it does not modify either table. `topComment` is a sample review comment, not a separately ranked comment.
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:3000/reviews" -Headers $headers
+```
+
+### `POST /orders`
+
+Creates a new order in the Supabase `orders` table with status `Pending`.
+
+- **Inputs:** JSON body with a numeric `productId`, positive numeric `quantity`, and optional `customerName`. If omitted, the customer name is stored as `Anonymous`. Send `Content-Type: application/json`.
+- **Success:** `201 Created` with the new order ID, product, quantity, customer name, status, and creation time.
+- **Important:** This endpoint writes a real order record. Use test data when demonstrating it.
+
+```powershell
+$body = @{
+  productId = 7
+  quantity = 5
+  customerName = "Nairobi Relief Clinic"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri "http://localhost:3000/orders" `
+  -Method Post `
+  -Headers $headers `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+### `GET /v1/health-signals/area-alerts`
+
+Returns aggregate, anonymized prescription-spike alerts for one region. It does not return prescription event IDs or individual records.
+
+- **Inputs:** Required `region` must exactly match a value in the data. Required `since` must be a valid `YYYY-MM-DD` date and cannot be in the future.
+- **Success:** `200 OK` with an array of alerts. The array can be empty when no records meet the rule.
+- **Data access:** Reads `prescription_events` columns `region`, `illness_category`, and `dispensed_at`. It currently evaluates Cholera and Typhoid.
+- **Demo detection rule:** A day needs at least five prescriptions and, if the preceding seven-day baseline is non-zero, at least three times its average daily count. With a zero baseline, five prescriptions trigger an alert. Results are limited to the last seven calendar days, further restricted by `since`.
+- **Alert fields:** Region, illness category, alert date and count, baseline dates/count/daily average, spike ratio (null when baseline is zero), detection thresholds, active status, and `signalMode`.
+
+```powershell
 $region = [uri]::EscapeDataString("your-exact-region-value")
 $since = "2026-10-29"
 Invoke-RestMethod `
   -Uri "http://localhost:3000/v1/health-signals/area-alerts?region=$region&since=$since" `
-  -Headers @{"X-API-Key"=$apiKey}
+  -Headers $headers
 ```
 
-The route reads the Supabase `prescription_events` table's `region`, `illness_category`, and `dispensed_at` columns. It currently evaluates Cholera and Typhoid. The demo rule requires at least five prescriptions in a day and, when there is a non-zero baseline, at least three times the average daily count across the previous seven days. Results are limited to the last seven calendar days and to dates on or after `since`.
-
-Alert responses include aggregate baseline counts, the spike ratio, and the detection rule. Individual event IDs are not returned. **These are demonstration signals, not validated outbreak detection or medical/dispatch advice. Do not use them to make operational decisions without validating the data and detection criteria with qualified stakeholders.**
+The mode is `demo` by default (`HEALTH_SIGNALS_MODE=demo`). **These are demonstration signals, not validated outbreak detection or medical/dispatch advice. Do not use them to make operational decisions without validating the data and detection criteria with qualified stakeholders.**
 
 ## API testing guide
 
