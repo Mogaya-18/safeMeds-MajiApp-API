@@ -11,6 +11,12 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 const WATER_CATEGORY = "Water Purification";
+const WATERBORNE_ILLNESSES = new Set(["cholera", "typhoid"]);
+const ALERT_LOOKBACK_DAYS = 7;
+const ALERT_BASELINE_DAYS = 7;
+const MIN_ALERT_PRESCRIPTIONS = 5;
+const SPIKE_MULTIPLIER = 3;
+const HEALTH_SIGNALS_MODE = process.env.HEALTH_SIGNALS_MODE || "demo";
 
 const supabaseURL = process.env.SUPABASE_URL;
 const supabaseKEY = process.env.SUPABASE_KEY;
@@ -21,7 +27,7 @@ if (!supabaseURL || !supabaseKEY) {
 
 const supabase = createClient(supabaseURL, supabaseKEY);
 
-const VALID_KEYS = (process.env.API_KEYS || "")
+const VALID_KEYS = (process.env.API_KEYS || process.env.MAJIAPP_API_KEY || "")
   .split(",")
   .map((k) => k.trim())
   .filter(Boolean);
@@ -202,7 +208,174 @@ app.get("/reviews", async (req, res) => {
 });
 
 // -----------------------------------------------------------------------------
-// 3. POST /orders - Creates a New Customer Order
+// 3. GET /v1/health-signals/area-alerts - Returns Anonymized Prescription Spikes
+// -----------------------------------------------------------------------------
+app.get("/v1/health-signals/area-alerts", async (req, res) => {
+  const { region, since } = req.query;
+
+  if (typeof region !== "string" || !region.trim()) {
+    return res.status(400).json({
+      message: "Invalid query. 'region' must be a non-empty string.",
+    });
+  }
+
+  if (
+    typeof since !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(since) ||
+    Number.isNaN(Date.parse(`${since}T00:00:00.000Z`)) ||
+    new Date(`${since}T00:00:00.000Z`).toISOString().slice(0, 10) !== since
+  ) {
+    return res.status(400).json({
+      message: "Invalid query. 'since' must be a valid ISO date (YYYY-MM-DD).",
+    });
+  }
+
+  const now = new Date();
+  const sinceDate = new Date(`${since}T00:00:00.000Z`);
+  if (sinceDate > now) {
+    return res.status(400).json({
+      message: "'since' must not be a future date.",
+    });
+  }
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const activeWindowStart = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() - ALERT_LOOKBACK_DAYS + 1,
+    ),
+  );
+  const detectionStart =
+    sinceDate > activeWindowStart ? sinceDate : activeWindowStart;
+  const historyStart = new Date(
+    detectionStart.getTime() - ALERT_BASELINE_DAYS * dayMs,
+  );
+  const regionName = region.trim();
+  const events = [];
+  const pageSize = 1000;
+
+  try {
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await supabase
+        .from("prescription_events")
+        .select("id, region, illness_category, dispensed_at")
+        .eq("region", regionName)
+        .gte("dispensed_at", historyStart.toISOString())
+        .lte("dispensed_at", now.toISOString())
+        .order("dispensed_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(offset, offset + pageSize - 1);
+
+      if (error) {
+        console.error(
+          "Supabase Error on /v1/health-signals/area-alerts:",
+          error.message,
+        );
+        return res
+          .status(500)
+          .json({ message: "Unable to retrieve area alerts" });
+      }
+
+      events.push(...(data || []));
+      if (!data || data.length < pageSize) break;
+    }
+
+    const dailyCounts = new Map();
+    const illnessNames = new Map();
+
+    for (const event of events) {
+      const illnessKey = String(event.illness_category || "")
+        .trim()
+        .toLowerCase();
+      if (!WATERBORNE_ILLNESSES.has(illnessKey)) continue;
+
+      const eventDate = new Date(event.dispensed_at);
+      if (Number.isNaN(eventDate.getTime())) continue;
+
+      const day = eventDate.toISOString().slice(0, 10);
+      const key = `${illnessKey}:${day}`;
+      dailyCounts.set(key, (dailyCounts.get(key) || 0) + 1);
+      illnessNames.set(illnessKey, String(event.illness_category).trim());
+    }
+
+    const alerts = [];
+    const startDay = detectionStart.toISOString().slice(0, 10);
+    const endDay = now.toISOString().slice(0, 10);
+
+    for (const illnessKey of illnessNames.keys()) {
+      for (
+        let dayTime = Date.parse(`${startDay}T00:00:00.000Z`);
+        dayTime <= Date.parse(`${endDay}T00:00:00.000Z`);
+        dayTime += dayMs
+      ) {
+        const day = new Date(dayTime).toISOString().slice(0, 10);
+        const prescriptionCount = dailyCounts.get(`${illnessKey}:${day}`) || 0;
+        if (prescriptionCount < MIN_ALERT_PRESCRIPTIONS) continue;
+
+        let baselineCount = 0;
+        for (let offset = 1; offset <= ALERT_BASELINE_DAYS; offset += 1) {
+          const baselineDay = new Date(dayTime - offset * dayMs)
+            .toISOString()
+            .slice(0, 10);
+          baselineCount += dailyCounts.get(`${illnessKey}:${baselineDay}`) || 0;
+        }
+
+        const baselineDailyAverage = baselineCount / ALERT_BASELINE_DAYS;
+        if (
+          baselineDailyAverage > 0 &&
+          prescriptionCount < baselineDailyAverage * SPIKE_MULTIPLIER
+        ) {
+          continue;
+        }
+
+        const baselineEnd = new Date(dayTime - dayMs)
+          .toISOString()
+          .slice(0, 10);
+        const baselineStart = new Date(
+          dayTime - ALERT_BASELINE_DAYS * dayMs,
+        )
+          .toISOString()
+          .slice(0, 10);
+        alerts.push({
+          region: regionName,
+          illnessCategory: illnessNames.get(illnessKey),
+          alertDate: day,
+          prescriptionCount,
+          baseline: {
+            startDate: baselineStart,
+            endDate: baselineEnd,
+            prescriptionCount: baselineCount,
+            dailyAverage: Number(baselineDailyAverage.toFixed(2)),
+          },
+          spikeRatio:
+            baselineDailyAverage > 0
+              ? Number((prescriptionCount / baselineDailyAverage).toFixed(2))
+              : null,
+          detectionRule: {
+            minimumPrescriptions: MIN_ALERT_PRESCRIPTIONS,
+            spikeMultiplier: SPIKE_MULTIPLIER,
+          },
+          status: "active",
+          signalMode: HEALTH_SIGNALS_MODE,
+        });
+      }
+    }
+
+    alerts.sort(
+      (a, b) =>
+        b.alertDate.localeCompare(a.alertDate) ||
+        a.illnessCategory.localeCompare(b.illnessCategory),
+    );
+    return res.status(200).json(alerts);
+  } catch (err) {
+    console.error("GET /v1/health-signals/area-alerts error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// -----------------------------------------------------------------------------
+// 4. POST /orders - Creates a New Customer Order
 // -----------------------------------------------------------------------------
 app.post("/orders", async (req, res) => {
   try {
