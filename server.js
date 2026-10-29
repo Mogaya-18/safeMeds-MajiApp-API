@@ -21,6 +21,60 @@ if (!supabaseURL || !supabaseKEY) {
 
 const supabase = createClient(supabaseURL, supabaseKEY);
 
+const VALID_KEYS = (process.env.API_KEYS || "")
+  .split(",")
+  .map((k) => k.trim())
+  .filter(Boolean);
+
+console.log(`Loaded ${VALID_KEYS.length} valid API keys.`);
+
+function requireApiKey(req, res, next) {
+  const key = req.get("X-API-Key");
+  if (!key || !VALID_KEYS.includes(key)) {
+    return res.status(401).json({ message: "Missing or invalid API key" });
+  }
+  req.apiKey = key;
+  next();
+}
+
+app.use(requireApiKey);
+
+// In-memory request counter per key
+function rateLimit({ windowMs, max }) {
+  const hits = new Map(); // key -> { count, resetAt }
+
+  return (req, res, next) => {
+    const id = req.apiKey || req.ip;
+    const now = Date.now();
+    let entry = hits.get(id);
+
+    if (!entry || now >= entry.resetAt) {
+      entry = { count: 0, resetAt: now + windowMs };
+      hits.set(id, entry);
+    }
+
+    entry.count += 1;
+
+    if (entry.count > max) {
+      const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
+      res.set("Retry-After", String(retryAfter));
+      return res.status(429).json({
+        message: "Too many requests",
+        retryAfter,
+      });
+    }
+
+    next();
+  };
+}
+
+// Register rate limiter globally: 100 requests per 60 seconds
+app.use(rateLimit({ windowMs: 60000, max: 100 }));
+
+app.get("/tasks", (req, res) => {
+  res.json({ message: "Success! You accessed a protected endpoint." });
+});
+
 // -----------------------------------------------------------------------------
 // 1. GET /inventory - Exposes Water Purification Inventory
 // -----------------------------------------------------------------------------
