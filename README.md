@@ -62,6 +62,7 @@ A simple protected connectivity check. It does not read or write database data.
 
 ```powershell
 Invoke-RestMethod -Uri "http://localhost:3000/tasks" -Headers $headers
+curl -i -H "X-API-Key: <YOUR_API_KEY>" http://localhost:<YOUR_PORT_NUMBER>/tasks
 ```
 
 ### `GET /inventory`
@@ -74,6 +75,7 @@ Returns water-purification items from the Supabase `inventory` table. Each item 
 
 ```powershell
 Invoke-RestMethod -Uri "http://localhost:3000/inventory?product=Aquatabs&available=true" -Headers $headers
+curl -i -H "X-API-Key: <YOUR_API_KEY>" http://localhost:<YOUR_PORT_NUMBER>/inventory
 ```
 
 ### `GET /reviews`
@@ -86,6 +88,7 @@ Ranks water-purification products by their average customer rating. It joins rev
 
 ```powershell
 Invoke-RestMethod -Uri "http://localhost:3000/reviews" -Headers $headers
+curl -i -H "X-API-Key: <YOUR_API_KEY>" http://localhost:<YOUR_PORT_NUMBER>/reviews
 ```
 
 ### `POST /orders`
@@ -110,6 +113,10 @@ Invoke-RestMethod `
   -ContentType "application/json" `
   -Body $body
 ```
+
+# Running Command [Windows]
+
+curl -i -X POST http://localhost:<YOUR_PORT_NUMBER>/orders -H "X-API-Key: <YOUR_API_KEY>" -H "Content-Type: application/json" -d "{\"productId\": <YOUR_ID>, \"quantity\": <YOUR_QUANTITY>, \"customerName\": \"<YOUR_CUSTOMER_NAME>\"}"
 
 ### `GET /v1/health-signals/area-alerts`
 
