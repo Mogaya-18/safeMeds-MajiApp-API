@@ -20,29 +20,19 @@ const HEALTH_SIGNALS_MODE = process.env.HEALTH_SIGNALS_MODE || "demo";
 
 const supabaseURL = process.env.SUPABASE_URL;
 const supabaseKEY = process.env.SUPABASE_KEY;
-const rawApiKeys = process.env.API_KEYS || process.env.MAJIAPP_API_KEY || "";
-const VALID_KEYS = rawApiKeys
+
+if (!supabaseURL || !supabaseKEY) {
+  console.error("❌ Error: SUPABASE_URL or SUPABASE_KEY missing in .env file!");
+}
+
+const supabase = createClient(supabaseURL, supabaseKEY);
+
+const VALID_KEYS = (process.env.API_KEYS || process.env.MAJIAPP_API_KEY || "")
   .split(",")
   .map((k) => k.trim())
   .filter(Boolean);
 
-if (VALID_KEYS.length === 0) {
-  console.error(
-    "❌ Error: API_KEYS or MAJIAPP_API_KEY missing in environment variables.",
-  );
-  process.exit(1);
-}
-
-if (!supabaseURL || !supabaseKEY) {
-  console.error(
-    "❌ Error: SUPABASE_URL or SUPABASE_KEY missing in environment variables.",
-  );
-  process.exit(1);
-}
-
 console.log(`Loaded ${VALID_KEYS.length} valid API keys.`);
-
-const supabase = createClient(supabaseURL, supabaseKEY);
 
 function requireApiKey(req, res, next) {
   const key = req.get("X-API-Key");
@@ -52,14 +42,6 @@ function requireApiKey(req, res, next) {
   req.apiKey = key;
   next();
 }
-
-app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "ok",
-    message: "API server is healthy",
-    apiKeysLoaded: VALID_KEYS.length,
-  });
-});
 
 app.use(requireApiKey);
 
