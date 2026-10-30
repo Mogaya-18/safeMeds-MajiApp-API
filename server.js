@@ -27,7 +27,7 @@ if (!supabaseURL || !supabaseKEY) {
 
 const supabase = createClient(supabaseURL, supabaseKEY);
 
-const VALID_KEYS = (process.env.API_KEYS || process.env.MAJIAPP_API_KEY || "")
+const VALID_KEYS = (process.env.API_KEYS || "")
   .split(",")
   .map((k) => k.trim())
   .filter(Boolean);
@@ -332,9 +332,7 @@ app.get("/v1/health-signals/area-alerts", async (req, res) => {
         const baselineEnd = new Date(dayTime - dayMs)
           .toISOString()
           .slice(0, 10);
-        const baselineStart = new Date(
-          dayTime - ALERT_BASELINE_DAYS * dayMs,
-        )
+        const baselineStart = new Date(dayTime - ALERT_BASELINE_DAYS * dayMs)
           .toISOString()
           .slice(0, 10);
         alerts.push({
