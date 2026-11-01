@@ -141,3 +141,13 @@ The mode is `demo` by default (`HEALTH_SIGNALS_MODE=demo`). **These are demonstr
 ## API testing guide
 
 See [api_testing_documentation.md](./api_testing_documentation.md) for request examples and response details for all endpoints.
+
+## Running commands for the API using the Render URL
+
+curl -i -H "X-API-Key: YOUR_API_KEY" "https://safemeds-majiapp-api-nate.onrender.com/inventory"
+
+curl -i -H "X-API-Key: YOUR_API_KEY" "https://safemeds-majiapp-api-nate.onrender.com/reviews"
+
+curl -i -X POST "https://safemeds-majiapp-api-nate.onrender.com/orders" -H "X-API-Key: YOUR_API_KEY" -H "Content-Type: application/json" -d "{\"productId\": <YOUR_ID>, \"quantity\": <YOUR_QUANTITY>, \"customerName\": \"<YOUR_CUSTOMER_NAME>\"}"
+
+curl -i -H "X-API-Key: YOUR_API_KEY" "https://safemeds-majiapp-api-nate.onrender.com/v1/health-signals/area-alerts?region=Nairobi&since=2026-10-25"
