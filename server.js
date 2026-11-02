@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
+import { monitor, statsHandler } from "./monitoring.js";
 
 dotenv.config();
 
@@ -43,6 +44,7 @@ function requireApiKey(req, res, next) {
   next();
 }
 
+app.use(monitor);
 app.use(requireApiKey);
 
 // In-memory request counter per key
@@ -76,6 +78,7 @@ function rateLimit({ windowMs, max }) {
 
 // Register rate limiter globally: 100 requests per 60 seconds
 app.use(rateLimit({ windowMs: 60000, max: 100 }));
+app.get("/stats", statsHandler);
 
 app.get("/tasks", (req, res) => {
   res.json({ message: "Success! You accessed a protected endpoint." });

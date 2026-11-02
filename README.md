@@ -151,3 +151,52 @@ curl -i -H "X-API-Key: YOUR_API_KEY" "https://safemeds-majiapp-api-nate.onrender
 curl -i -X POST "https://safemeds-majiapp-api-nate.onrender.com/orders" -H "X-API-Key: YOUR_API_KEY" -H "Content-Type: application/json" -d "{\"productId\": <YOUR_ID>, \"quantity\": <YOUR_QUANTITY>, \"customerName\": \"<YOUR_CUSTOMER_NAME>\"}"
 
 curl -i -H "X-API-Key: YOUR_API_KEY" "https://safemeds-majiapp-api-nate.onrender.com/v1/health-signals/area-alerts?region=Nairobi&since=2026-10-25"
+
+## Monitoring & Health Endpoint
+
+The API exposes operational metrics via the `/stats` endpoint. Access requires a valid API key header.
+
+### Endpoint
+
+`GET /stats`
+
+### Headers
+
+`X-API-Key: <your-api-key>`
+
+### Example Response
+
+```json
+{
+  "startedAt": "2026-11-02T13:08:20.635Z",
+  "uptimeSeconds": 1028,
+  "total": 63,
+  "clientErrors": 36,
+  "serverErrors": 0,
+  "errorRatePercent": 0,
+  "avgMs": 0.8,
+  "routes": {
+    "GET (no route)": {
+      "count": 36,
+      "clientErrors": 36,
+      "serverErrors": 0,
+      "avgMs": 0.9,
+      "maxMs": 7.1
+    },
+    "GET /tasks": {
+      "count": 24,
+      "clientErrors": 0,
+      "serverErrors": 0,
+      "avgMs": 0.6,
+      "maxMs": 1.3
+    },
+    "GET /stats": {
+      "count": 3,
+      "clientErrors": 0,
+      "serverErrors": 0,
+      "avgMs": 1.3,
+      "maxMs": 2.3
+    }
+  }
+}
+```
